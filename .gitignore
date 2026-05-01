@@ -1,11 +1,33 @@
-<<<<<<< HEAD
-# Python
+# Local environment files
+backend/.env
+frontend/.env
+
+# Python bytecode and caches
 __pycache__/
+**/__pycache__
 *.py[cod]
 *.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
+env/
 .env
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage and test output
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+build/
+dist/
 *.egg-info/
 
 # Node
@@ -23,39 +45,3 @@ Thumbs.db
 
 # Claude
 .claude/
-=======
-# Local environment files
-backend/.env
-
-# Python bytecode and caches
-__pycache__/
-**/__pycache__
-*.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Tool caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Coverage and test output
-.coverage
-.coverage.*
-htmlcov/
-
-# Build artifacts
-build/
-dist/
-*.egg-info/
-
-# IDE/editor
-.vscode/
-.idea/
-
->>>>>>> e3a1faf88b454447f05be8573c688390a90f6882

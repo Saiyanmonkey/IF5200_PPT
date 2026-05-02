@@ -1,4 +1,9 @@
-from backend.app.repositories import UserRepository, VacancyRepository
+from __future__ import annotations
+
+try:
+    from backend.app.repositories import UserRepository, VacancyRepository
+except ImportError:  # pragma: no cover - fallback for package-root test execution
+    from app.repositories import UserRepository, VacancyRepository
 
 
 class RecommendationService:
@@ -16,7 +21,8 @@ class RecommendationService:
     
     def get_suggested_connections(self, user_id):
         result = []
-        for connected_user_id, score, fof in self.user_repository.get_suggested_connections(user_id):
+        for connected_user_id, score in self.user_repository.get_suggested_connections(user_id):
+            fof = True
             result.append({
                 "user_id": connected_user_id,
                 "score": score,

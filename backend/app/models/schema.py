@@ -14,6 +14,8 @@ class User(Base):
     
     id = Column(String, primary_key=True, default=generate_uuid)
     email = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
     password_hash = Column(String, nullable=True) # Nullable karena bisa login via OAuth
     phone_hash = Column(String, index=True, nullable=True) # Penting untuk sinkronisasi kontak
     linkedin_id = Column(String, unique=True, nullable=True)
@@ -21,6 +23,9 @@ class User(Base):
     is_open_to_refer = Column(Boolean, default=True) # Sesuai fitur kontrol privasi
     referral_quota = Column(Integer, default=5)
     created_at = Column(DateTime, default=datetime.utcnow)
+    cv_filename = Column(String, nullable=True)
+    cv_url = Column(String, nullable=True)
+    cv_uploaded_at = Column(DateTime, nullable=True)
 
 class Company(Base):
     __tablename__ = "companies"

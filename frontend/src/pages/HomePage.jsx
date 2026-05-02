@@ -253,3 +253,222 @@ export default function HomePage() {
     </div>
   )
 }
+
+export default function HomePage() {
+  const { user } = useAuth()
+  const [connections, setConnections] = useState([])
+  const [recommendedConnections, setRecommendedConnections] = useState([])
+  const [suggestedConnections, setSuggestedConnections] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [recommendationLoading, setRecommendationLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [filterHops, setFilterHops] = useState('all')
+  const [page, setPage] = useState(1)
+  const [syncOpen, setSyncOpen] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    api.getConnections()
+      .then(data => { if (!cancelled) setConnections(data.connections || []) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!user?.id) return
+
+    let cancelled = false
+    setRecommendationLoading(true)
+
+    Promise.all([
+      api.getRecommendationConnections(user.id),
+      api.getSuggestedRecommendations(user.id),
+    ])
+      .then(([directData, suggestedData]) => {
+        if (cancelled) return
+        setRecommendedConnections(directData.connections || [])
+        setSuggestedConnections(suggestedData.connections || [])
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecommendedConnections([])
+          setSuggestedConnections([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRecommendationLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [user?.id])
+
+  const connectionByUserId = useMemo(() => {
+    const map = new Map()
+    connections.forEach((connection) => {
+      map.set(connection.user.id, connection)
+    })
+    return map
+  }, [connections])
+
+  const recommendationCards = useMemo(() => {
+    const direct = recommendedConnections.map((item) => ({
+      ...item,
+      connection: connectionByUserId.get(item.user_id) || null,
+    }))
+    const suggested = suggestedConnections.map((item) => ({
+      ...item,
+      connection: connectionByUserId.get(item.user_id) || null,
+    }))
+
+    return {
+      direct: direct.filter((item) => item.connection || item.user_id),
+      suggested: suggested.filter((item) => item.connection || item.user_id),
+    }
+  }, [connectionByUserId, recommendedConnections, suggestedConnections])
+
+  const filtered = useMemo(() => {
+    let list = connections
+    if (filterHops !== 'all') list = list.filter(c => c.hops === parseInt(filterHops, 10))
+    if (query.trim()) {
+      const q = query.toLowerCase()
+      list = list.filter(c =>
+        c.user.full_name.toLowerCase().includes(q) ||
+        c.company_name?.toLowerCase().includes(q) ||
+        c.job_title?.toLowerCase().includes(q) ||
+        c.skills?.some(s => s.name.toLowerCase().includes(q))
+      )
+    }
+    return list
+  }, [connections, query, filterHops])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const handleQueryChange = (e) => { setQuery(e.target.value); setPage(1) }
+  const handleFilterChange = (e) => { setFilterHops(e.target.value); setPage(1) }
+
+  return (
+    <div className="max-w-5xl">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Your Network</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Connect with industry experts who can vouch for your skills and fast-track your next career move.
+          </p>
+        </div>
+        <button
+          onClick={() => setSyncOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors flex-shrink-0"
+        >
+          <Plus size={16} />
+          Add New Connection
+        </button>
+      </div>
+
+      {/* Search + filter */}
+      <div className="flex gap-3 mb-6 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search your network..."
+            value={query}
+            onChange={handleQueryChange}
+            className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 shadow-sm"
+          />
+        </div>
+        <select
+          value={filterHops}
+          onChange={handleFilterChange}
+          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 shadow-sm"
+        >
+          <option value="all">All degrees</option>
+          <option value="1">1st degree</option>
+          <option value="2">2nd degree</option>
+        </select>
+      </div>
+
+      {/* Grid */}
+      {loading && (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 h-36 animate-pulse" />
+          ))}
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+            <Search size={24} className="text-gray-400" />
+          </div>
+          <p className="font-semibold text-slate-900">
+            {connections.length === 0 ? 'No connections yet' : 'No results found'}
+          </p>
+          <p className="text-sm text-gray-500 mt-1">
+            {connections.length === 0
+              ? 'Add your first connection by syncing your contacts.'
+              : 'Try a different search term or filter.'}
+          </p>
+          {connections.length === 0 && (
+            <button
+              onClick={() => setSyncOpen(true)}
+              className="mt-4 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              Sync Contacts
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && paginated.length > 0 && (
+        <>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {paginated.map(conn => <ConnectionCard key={conn.user.id} conn={conn} />)}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i + 1)}
+                  className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                    page === i + 1 ? 'bg-slate-900 text-white' : 'border border-gray-200 hover:bg-gray-50 text-slate-700'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      <AddConnectionModal
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        directRecommendations={recommendationCards.direct.slice(0, 6)}
+        suggestedRecommendations={recommendationCards.suggested.slice(0, 6)}
+      />
+    </div>
+  )
+}
+

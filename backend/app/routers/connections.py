@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.db.neo4j import get_neo4j_driver
 from app.core.database import get_db
 from app.models.schema import ConnectionRequest, User
-from app.services import recommendation, company_graph, connection_service
+from app.services import recommendation, company_graph, connection_service, user_graph
 
 router = APIRouter()
 

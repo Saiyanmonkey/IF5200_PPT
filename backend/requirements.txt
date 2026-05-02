@@ -9,5 +9,6 @@ PyJWT==2.8.0
 rapidfuzz==3.13.0
 pypdf==5.4.0
 pytest==9.0.2
-google-genai=1.73.1
-tqdm=4.67.3
+google-genai==1.73.1
+numpy==1.26.4
+tqdm==4.67.3

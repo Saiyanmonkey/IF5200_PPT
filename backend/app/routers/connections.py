@@ -17,12 +17,11 @@ from sqlalchemy.orm import Session
 
 from app.db.neo4j import get_neo4j_driver
 from app.core.database import get_db
+from app.core.security import get_current_user_id
 from app.models.schema import ConnectionRequest, User
 from app.services import recommendation, company_graph, connection_service, user_graph
 
 router = APIRouter()
-
-DEMO_USER_ID = "user-001"
 
 
 class NetworkStatsResponse(BaseModel):
@@ -33,7 +32,7 @@ class NetworkStatsResponse(BaseModel):
 
 @router.get("/user/network-stats", response_model=NetworkStatsResponse)
 async def network_stats(
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     driver: AsyncDriver = Depends(get_neo4j_driver),
 ):
     return await recommendation.get_network_stats(driver, user_id)
@@ -41,7 +40,7 @@ async def network_stats(
 
 @router.get("/connections")
 async def all_connections(
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     max_hops: int = Query(default=2, ge=1, le=2),
     driver: AsyncDriver = Depends(get_neo4j_driver),
 ):
@@ -57,7 +56,7 @@ async def all_connections(
 @router.get("/connections/at-company/{company_id}")
 async def connections_at_company(
     company_id: str,
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     max_hops: int = Query(default=2, ge=1, le=2),
     driver: AsyncDriver = Depends(get_neo4j_driver),
 ):
@@ -102,7 +101,7 @@ class ConnectionRequestResponse(BaseModel):
 @router.post("/connections/request/{target_user_id}", response_model=ConnectionRequestResponse)
 async def send_connection_request(
     target_user_id: str,
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
     driver: AsyncDriver = Depends(get_neo4j_driver),
 ):
@@ -139,7 +138,7 @@ async def send_connection_request(
 @router.post("/connections/request/{request_id}/accept", response_model=ConnectionRequestResponse)
 async def accept_connection_request(
     request_id: str,
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
     driver: AsyncDriver = Depends(get_neo4j_driver),
 ):
@@ -165,7 +164,7 @@ async def accept_connection_request(
 @router.post("/connections/request/{request_id}/decline", response_model=ConnectionRequestResponse)
 async def decline_connection_request(
     request_id: str,
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     req = db.query(ConnectionRequest).filter(ConnectionRequest.id == request_id).first()
@@ -185,7 +184,7 @@ async def decline_connection_request(
 
 @router.get("/connections/requests/incoming")
 async def list_incoming_requests(
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     reqs = (
@@ -209,7 +208,7 @@ async def list_incoming_requests(
 
 @router.get("/connections/requests/outgoing")
 async def list_outgoing_requests(
-    user_id: str = Query(default=DEMO_USER_ID),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     reqs = (

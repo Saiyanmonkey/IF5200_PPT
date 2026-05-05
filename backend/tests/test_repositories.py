@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import neo4j
 import numpy as np
 
-from backend.app.repositories import ConfigRepository, FangCollaborativeParameterRepository, UserRepository, VacancyRepository
+from backend.app.repositories import ConfigRepository, FangCollaborativeParameterRepository, SkillRepository, UserRepository, VacancyRepository
 
 def prepare_neo4j_driver_and_database_name():
     load_dotenv()
@@ -2038,6 +2038,43 @@ def test_fang_repository_set_skill_bias_relation_exists():
                 id=CONFIG_ID,
             )
 
+            driver.execute_query(
+                """
+                    MATCH (c:Skill {id: $id})
+                    DETACH DELETE c;
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_SKILL_ID,
+            )
+
+def test_skill_repository_get_all_skills():
+    np.random.seed(120)
+    CHOSEN_SKILL_ID = np.random.randint(999_999_999)
+    CHOSEN_SKILL_NAME = f"skill-{CHOSEN_SKILL_ID}"
+    driver, NEO4J_DATABASE = prepare_neo4j_driver_and_database_name()
+
+    with driver:
+        assert is_unoccupied_skill_id(driver, CHOSEN_SKILL_ID), "Skill ID is already occupied; change your seed."
+
+        try:
+            driver.execute_query(
+                """
+                    CREATE (:Skill {
+                        id: $id,
+                        name: $name
+                    });
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_SKILL_ID,
+                name=CHOSEN_SKILL_NAME
+            )
+
+            repo = SkillRepository(driver, database=NEO4J_DATABASE)
+
+            result = repo.get_all_skills()
+            assert (CHOSEN_SKILL_ID, CHOSEN_SKILL_NAME) in result
+            
+        finally:
             driver.execute_query(
                 """
                     MATCH (c:Skill {id: $id})

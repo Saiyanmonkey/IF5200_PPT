@@ -767,3 +767,24 @@ class SkillRepository:
             print(f"Embedding for {r_name} (id: {r_id}) has been initialized!")
 
         return len(records)
+    
+    def get_all_skills(self) -> list[tuple[Any, str]]:
+        """
+        Return all skills, represented by list of <skill_id, name>.
+        """
+        records, _, _ = self.driver.execute_query(
+            """
+                MATCH (s:Skill)
+                RETURN s.id AS id, s.name AS name;
+            """,
+            database_=self.database
+        )
+
+        result = []
+        for r in records:
+            r_id = r["id"]  # can be str or int
+            r_name = str(r["name"])
+            result.append((r_id, r_name))
+
+        return result
+

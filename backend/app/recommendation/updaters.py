@@ -125,7 +125,7 @@ class JobstreetVacancyUpdater:
         self.verbose = verbose
 
     def update(self):
-        skipping = True
+        # skipping = True
         for x in tqdm(self.company_repo.get_all()):
             if self.verbose:
                 print("Company:", x)
@@ -134,9 +134,9 @@ class JobstreetVacancyUpdater:
             company_name = x["name"]
             jobstreet_id = x["jobstreet_id"]
             
-            if company_name != "Blibli" and skipping:
-                print(f"Skipping {company_name}")
-                continue
+            # if company_name != "Blibli" and skipping:
+            #     print(f"Skipping {company_name}")
+            #     continue
 
             if jobstreet_id is None:
                 if self.verbose:

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import neo4j
 import numpy as np
 
-from backend.app.repositories import ConfigRepository, FangCollaborativeParameterRepository, SkillRepository, UserRepository, VacancyRepository
+from backend.app.repositories import CompanyRepository, ConfigRepository, FangCollaborativeParameterRepository, SkillRepository, UserRepository, VacancyRepository
 
 def prepare_neo4j_driver_and_database_name():
     load_dotenv()
@@ -35,6 +35,13 @@ def is_unoccupied_skill_id(driver: neo4j.Driver, skill_id):
     records, _, _ = driver.execute_query(
         "MATCH (c:Skill {id: $id}) RETURN c;",
         id=skill_id
+    )
+    return len(records) == 0
+
+def is_unoccupied_company_id(driver: neo4j.Driver, company_id):
+    records, _, _ = driver.execute_query(
+        "MATCH (c:Company {id: $id}) RETURN c;",
+        id=company_id
     )
     return len(records) == 0
 
@@ -2083,3 +2090,132 @@ def test_skill_repository_get_all_skills():
                 database_=NEO4J_DATABASE,
                 id=CHOSEN_SKILL_ID,
             )
+
+def test_company_repository_get_all():
+    np.random.seed(120)
+    CHOSEN_COMPANY_ID = np.random.randint(999_999_999)
+    driver, NEO4J_DATABASE = prepare_neo4j_driver_and_database_name()
+
+    with driver:
+        assert is_unoccupied_company_id(driver, CHOSEN_COMPANY_ID), "Company ID is already occupied; change your seed."
+        try:
+            driver.execute_query(
+                """
+                    CREATE (:Company {
+                        id: $id
+                    });
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID
+            )
+
+            repo = CompanyRepository(driver, database=NEO4J_DATABASE)
+
+            result = repo.get_all()
+            found = False
+            for x in result:
+                if x["id"] == CHOSEN_COMPANY_ID:
+                    found = True
+                    break
+
+            assert found
+            
+        finally:
+            driver.execute_query(
+                """
+                    MATCH (c:Company {id: $id})
+                    DETACH DELETE c;
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID,
+            )
+
+def test_company_repository_set_jobstreet_id():
+    np.random.seed(120)
+    CHOSEN_COMPANY_ID = np.random.randint(999_999_999)
+    CHOSEN_COMPANY_JOBSTREET_ID = f"jid_{CHOSEN_COMPANY_ID}"
+    driver, NEO4J_DATABASE = prepare_neo4j_driver_and_database_name()
+
+    with driver:
+        assert is_unoccupied_company_id(driver, CHOSEN_COMPANY_ID), "Company ID is already occupied; change your seed."
+        try:
+            driver.execute_query(
+                """
+                    CREATE (:Company {
+                        id: $id
+                    });
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID
+            )
+
+            repo = CompanyRepository(driver, database=NEO4J_DATABASE)
+            repo.set_jobstreet_id(CHOSEN_COMPANY_ID, CHOSEN_COMPANY_JOBSTREET_ID)
+
+            records, _, _ = driver.execute_query(
+                "MATCH (c:Company {id: $id}) RETURN c.jobstreet_id AS jobstreet_id;",
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID,
+            )
+            assert len(records) == 1
+            assert records[0]["jobstreet_id"] == CHOSEN_COMPANY_JOBSTREET_ID
+            
+        finally:
+            driver.execute_query(
+                """
+                    MATCH (c:Company {id: $id})
+                    DETACH DELETE c;
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID,
+            )
+
+def test_company_repository_get_vacancies():
+    np.random.seed(120)
+    CHOSEN_COMPANY_ID = np.random.randint(999_999_999)
+    CHOSEN_VACANCY_ID = np.random.randint(999_999_999)
+    CHOSEN_VACANCY_DESC = f"desc_{CHOSEN_VACANCY_ID}"
+    CHOSEN_VACANCY_SOURCE_URL = f"source_url_{CHOSEN_VACANCY_ID}"
+    driver, NEO4J_DATABASE = prepare_neo4j_driver_and_database_name()
+
+    with driver:
+        assert is_unoccupied_company_id(driver, CHOSEN_COMPANY_ID), "Company ID is already occupied; change your seed."
+        try:
+            driver.execute_query(
+                """
+                    CREATE (:Company {
+                        id: $id
+                    });
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID
+            )
+            driver.execute_query(
+                """
+                    MATCH (c:Company {id: $id})
+                    CREATE (c)-[:OPENS]->(:Vacancy {id: $vacancy_id, description: $description, source_url: $source_url})
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID,
+                vacancy_id=CHOSEN_VACANCY_ID,
+                description=CHOSEN_VACANCY_DESC,
+                source_url=CHOSEN_VACANCY_SOURCE_URL
+            )
+
+            repo = CompanyRepository(driver, database=NEO4J_DATABASE)
+            result = repo.get_vacancies(CHOSEN_COMPANY_ID)
+            assert len(result) == 1
+            assert result[0]["id"] == CHOSEN_VACANCY_ID
+            assert result[0]["description"] == CHOSEN_VACANCY_DESC
+            assert result[0]["source_url"] == CHOSEN_VACANCY_SOURCE_URL
+            
+        finally:
+            driver.execute_query(
+                """
+                    MATCH (c:Company {id: $id})
+                    DETACH DELETE c;
+                """,
+                database_=NEO4J_DATABASE,
+                id=CHOSEN_COMPANY_ID,
+            )
+

@@ -1,3 +1,4 @@
+import hashlib
 from typing import Any, Callable
 
 import neo4j
@@ -795,4 +796,104 @@ class SkillRepository:
             result.append((r_id, r_name))
 
         return result
+
+class CompanyRepository:
+    def __init__(self, driver: neo4j.Driver, database: str | None = None):
+        self.driver = driver
+        self.database = database
+
+    def get_all(self):
+        """
+        Return all skills, represented by list of dictionary with this attributes:
+        - id: Any
+        - name: str
+        - industry: str
+        - jobstreet_id: str
+        """
+        records, _, _ = self.driver.execute_query(
+            """
+                MATCH (c:Company)
+                RETURN c.id AS id, c.name AS name, c.industry AS industry, c.jobstreet_id AS jobstreet_id;
+            """,
+            database_=self.database
+        )
+
+        result = []
+        for r in records:
+            result.append({
+                "id": r["id"],
+                "name": r["name"],
+                "industry": r["industry"],
+                "jobstreet_id": r["jobstreet_id"],
+            })
+
+        return result
+    
+    def set_jobstreet_id(self, id, value: str):
+        self.driver.execute_query(
+            """
+                MATCH (c:Company {id: $id})
+                SET c.jobstreet_id = $jobstreet_id;
+            """,
+            database_=self.database,
+            id=id,
+            jobstreet_id=value,
+        )
+
+    def get_vacancies(self, id) -> list[dict[str, Any]]:
+        records, _, _ = self.driver.execute_query(
+            """
+                MATCH (c:Company {id: $id})-[:OPENS]->(v:Vacancy)
+                RETURN v.id AS id, v.description AS description, v.source_url AS source_url;
+            """,
+            database_=self.database,
+            id=id
+        )
+
+        result = []
+        for r in records:
+            result.append({
+                "id": r["id"],
+                "description": r["description"],
+                "source_url": r["source_url"],
+            })
+        
+        return result
+    
+    def set_vacancies(self, id, vacancies: list[dict[str, Any]]):
+        self.driver.execute_query(
+            """
+                MATCH (c:Company {id: $id})-[o:OPENS]->()
+                DETACH DELETE o;
+            """,
+            database_=self.database,
+            id=id
+        )
+        for v in vacancies:
+            vacancy_id = hashlib.sha256(v["source_url"].encode()).hexdigest()
+            description = v["description"]
+            source_url = v["source_url"]
+            self.driver.execute_query(
+                """
+                    MATCH (c:Company {id: $id})
+                    CREATE (c)-[o:OPENS]
+                        ->(v:Vacancy {id: $vacancy_id, description: $description, source_url: $source_url});
+                """,
+                database_=self.database,
+                id=id,
+                vacancy_id=vacancy_id,
+                description=description,
+                source_url=source_url
+            )
+            for skill_name in v["skills"]:
+                self.driver.execute_query(
+                    """
+                        MATCH (s:Skill {name: $name})
+                        MATCH (v:Vacancy {id: $id})
+                        CREATE (v)-[:REQUIRES]->(s);
+                    """,
+                    database_=self.database,
+                    id=vacancy_id,
+                    name=skill_name
+                )
 

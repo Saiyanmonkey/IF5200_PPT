@@ -6,12 +6,28 @@ import time
 from dotenv import load_dotenv
 import neo4j
 
+from backend.app.recommendation.fetchers import JobstreetFetcher
+from backend.app.recommendation.llm import init_gemini_skill_extraction_pipeline
 from backend.app.recommendation.optimizers import FangCollaborativeOptimizer
 from backend.app.recommendation.scorers import FangCollaborativeScorer, FangContentBasedScorer, FangScorer, FangVacancyScorer
 from backend.app.recommendation.service import RecommendationService
-from backend.app.recommendation.updaters import FangCollaborativeOptimizerUpdater, FangVacancyScorerUpdater
-from backend.app.repositories import ConfigRepository, FangCollaborativeParameterRepository, UserRepository, VacancyRepository
+from backend.app.recommendation.updaters import FangCollaborativeOptimizerUpdater, FangVacancyScorerUpdater, JobstreetVacancyUpdater
+from backend.app.repositories import CompanyRepository, ConfigRepository, FangCollaborativeParameterRepository, SkillRepository, UserRepository, VacancyRepository
 
+def prepare_llm_pipeline(repo: SkillRepository):
+    load_dotenv()
+
+    API_KEY = os.getenv("GEMINI_API_KEY", "???")
+    MODEL_NAME = os.getenv("GEMINI_GENERATION_MODEL", "gemini-3-flash-preview")
+    skills = repo.get_all_skills()
+    skills = {name for _, name in skills}
+    skills = list(skills)
+
+    return init_gemini_skill_extraction_pipeline(
+        api_key=API_KEY,
+        model_name=MODEL_NAME,
+        skills=skills
+    )
 
 def init():
     load_dotenv()
@@ -28,6 +44,8 @@ def init():
     vacancy_repo = VacancyRepository(driver=driver, database=NEO4J_DATABASE)
     fang_repo = FangCollaborativeParameterRepository(driver=driver, config_id=CONFIG_ID, database=NEO4J_DATABASE)
     config_repo = ConfigRepository(driver=driver, config_id=CONFIG_ID, database=NEO4J_DATABASE)
+    company_repo = CompanyRepository(driver=driver, database=NEO4J_DATABASE)
+    skill_repo = SkillRepository(driver=driver, database=NEO4J_DATABASE)
 
     service = RecommendationService(user_repository=user_repo, vacancy_repository=vacancy_repo)
 
@@ -40,17 +58,40 @@ def init():
     optimizer = FangCollaborativeOptimizer(fang_repo, user_repo, config_repo)
     optimizer_updater = FangCollaborativeOptimizerUpdater(user_repo, config_repo, optimizer, shuffle=True)
 
+    jobstreet_fetcher = JobstreetFetcher()
+    skill_pipeline = prepare_llm_pipeline(skill_repo)
+    def skill_fn(x) -> list[str]:
+        print(f"Prompt: {x}")
+        print("Wait 10 seconds .... (to avoid rate limit)")
+        time.sleep(5)
+        print("Let's go.")
+        y_list = skill_pipeline([x])
+        if y_list is None or len(y_list) == 0:
+            print(f"No result.")
+            return []
+        else:
+            print(f"Result: {y_list[0]}")
+            return y_list[0]
+
+    vacancy_updater = JobstreetVacancyUpdater(company_repo, jobstreet_fetcher, skill_fn, verbose = True)
+
+
     return (
         service,           # Ini hubungkan ke API
         scorer_updater,    # Ini jalankan di background untuk interval fixed (misalkan per 1 menit)
         optimizer_updater, # Ini juga jalankan di background untuk interval fixed
+        vacancy_updater,   # Jalankan hanya sekali (atau 1 kali per hari)
     )
 
 if __name__ == "__main__":
     print("Initializing ....")
     random.seed(120)
-    _, scorer_updater, optimizer_updater = init()
+    _, scorer_updater, optimizer_updater, vacancy_updater = init()
     print("Initialized! (Ctrl+C to exit)")
+
+    if "vacancy_only" in sys.argv:
+        vacancy_updater.update()
+        exit()
 
     optimizer_only = "optimizer_only" in sys.argv
     scorer_only = "scorer_only" in sys.argv

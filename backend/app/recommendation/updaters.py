@@ -1,12 +1,14 @@
 from itertools import product
 import random
 import time
+from typing import Callable
 
 from tqdm import tqdm
 
+from backend.app.recommendation.fetchers import JobstreetFetcher
 from backend.app.recommendation.optimizers import FangCollaborativeOptimizer
 from backend.app.recommendation.scorers import FangVacancyScorer
-from backend.app.repositories import ConfigRepository, UserRepository, VacancyRepository
+from backend.app.repositories import CompanyRepository, ConfigRepository, UserRepository, VacancyRepository
 
 class FangCollaborativeOptimizerUpdater:
     def __init__(
@@ -108,3 +110,78 @@ class FangVacancyScorerUpdater:
         for user_id, vacancy_id in tqdm(product(user_id_list, vacancy_id_list), total=len(user_id_list) * len(vacancy_id_list)):
             score = self.scorer.get_score(user_id, vacancy_id)
             self.user_repo.set_vacancy_score(user_id, vacancy_id, score)
+
+class JobstreetVacancyUpdater:
+    def __init__(
+            self,
+            company_repository: CompanyRepository,
+            jobstreet_fetcher: JobstreetFetcher,
+            skill_fn: Callable[[str], list[str]],
+            verbose: bool = False
+    ):
+        self.company_repo = company_repository
+        self.fetcher = jobstreet_fetcher
+        self.skill_fn = skill_fn
+        self.verbose = verbose
+
+    def update(self):
+        skipping = True
+        for x in tqdm(self.company_repo.get_all()):
+            if self.verbose:
+                print("Company:", x)
+            
+            company_id = x["id"]
+            company_name = x["name"]
+            jobstreet_id = x["jobstreet_id"]
+            
+            if company_name != "Blibli" and skipping:
+                print(f"Skipping {company_name}")
+                continue
+
+            if jobstreet_id is None:
+                if self.verbose:
+                    print("Jobstreet ID not found. Finding ....")
+
+                jobstreet_id = self.fetcher.find_company_id(company_name)
+                if self.verbose:
+                    print(f"Found: {jobstreet_id}")
+
+                if jobstreet_id is None:
+                    continue
+
+                self.company_repo.set_jobstreet_id(company_id, jobstreet_id)
+                if self.verbose:
+                    print(f"Jobstreet ID saved.")
+            
+            if self.verbose:
+                print(f"Find vacancies ....")
+            vacancies = self.fetcher.get_vacancies_from_company_id(jobstreet_id)
+            # Should be merged to make LLM efficient, but ... never mind.
+            new_vacancies = []
+            for v in vacancies:
+                if self.verbose:
+                    print(f"Vacancy: {v}")
+                url = v["url"]
+                if self.verbose:
+                    print(f"Find description ....")
+                description = self.fetcher.get_vacancy_description(url)
+                if self.verbose:
+                    print(f"Description: {description}")
+                if description is None:
+                    print("Warning: no description detected")
+                    description = v["name"]
+                else:
+                    description = v["name"] + "\n\n" + description
+
+                if self.verbose:
+                    print(f"Find skills ....")
+                skills = self.skill_fn(description)
+                if self.verbose:
+                    print(f"Skills: {skills}")
+                new_vacancies.append({
+                    "description": description,
+                    "source_url": url,
+                    "skills": skills
+                })
+
+            self.company_repo.set_vacancies(company_id, new_vacancies)

@@ -1,11 +1,13 @@
 from typing import Any
 
+from neo4j import Driver
 import numpy as np
 
+from backend.app.recommendation.fetchers import JobstreetFetcher
 from backend.app.recommendation.optimizers import FangCollaborativeOptimizer
 from backend.app.recommendation.scorers import FangVacancyScorer
-from backend.app.recommendation.updaters import FangCollaborativeOptimizerUpdater, FangVacancyScorerUpdater
-from backend.app.repositories import ConfigRepository, UserRepository, VacancyRepository
+from backend.app.recommendation.updaters import FangCollaborativeOptimizerUpdater, FangVacancyScorerUpdater, JobstreetVacancyUpdater
+from backend.app.repositories import CompanyRepository, ConfigRepository, UserRepository, VacancyRepository
 
 def test_collaborative_optimizer_updater_empty_users():
     class MockUserRepository(UserRepository):
@@ -467,3 +469,188 @@ def test_vacancy_scorer_updater():
     updater.update()
     assert len(user_repo.remaining_tuples) == 0
 
+def test_jobstreet_vacancy_updater_no_company():
+    class MockCompanyRepository(CompanyRepository):
+        def __init__(self):
+            self.called_count = 0
+
+        def get_all(self):
+            self.called_count += 1
+            return []
+        
+    class MockJobstreetFetcher(JobstreetFetcher):
+        def __init__(self):
+            pass
+
+        def find_company_id(self, company_name: str) -> str | None:
+            assert False, "Shouldn't be called."
+
+    repo = MockCompanyRepository()
+    fetcher = MockJobstreetFetcher()
+    updater = JobstreetVacancyUpdater(repo, fetcher)
+    updater.update()
+
+    assert repo.called_count == 1
+
+def test_jobstreet_vacancy_updater_one_company_jobstreet_id_not_found():
+    np.random.seed(120)
+    chosen_company_id = np.random.randint(999_999_999)
+    chosen_company_name = f"company_{chosen_company_id}"
+
+    class MockCompanyRepository(CompanyRepository):
+        def __init__(self):
+            self.called_count = 0
+
+        def get_all(self):
+            self.called_count += 1
+            return [{
+                "id": chosen_company_id,
+                "name": chosen_company_name,
+                "jobstreet_id": None
+            }]
+        
+    class MockJobstreetFetcher(JobstreetFetcher):
+        def __init__(self):
+            self.called_count = 0
+
+        def find_company_id(self, company_name: str) -> str | None:
+            self.called_count += 1
+            assert company_name == chosen_company_name
+            return None
+
+    repo = MockCompanyRepository()
+    fetcher = MockJobstreetFetcher()
+    updater = JobstreetVacancyUpdater(repo, fetcher)
+    updater.update()
+
+    assert repo.called_count == 1
+    assert fetcher.called_count == 1
+
+def test_jobstreet_vacancy_updater_one_company_jobstreet_id_exists():
+    np.random.seed(120)
+    chosen_company_id = np.random.randint(999_999_999)
+    chosen_company_name = f"company_{chosen_company_id}"
+    chosen_company_jobstreet_id = f"jsid_{chosen_company_id}"
+
+    class MockCompanyRepository(CompanyRepository):
+        def __init__(self):
+            self.called_count = 0
+
+        def get_all(self):
+            self.called_count += 1
+            return [{
+                "id": chosen_company_id,
+                "name": chosen_company_name,
+                "jobstreet_id": chosen_company_jobstreet_id
+            }]
+        
+    class MockJobstreetFetcher(JobstreetFetcher):
+        def __init__(self):
+            self.called_count = 0
+
+        def find_company_id(self, company_name: str) -> str | None:
+            assert False, "You shouldn't call this."
+        
+        def get_vacancies_from_company_id(self, company_id: str) -> list:
+            assert company_id == chosen_company_jobstreet_id
+            self.called_count += 1
+            return []
+
+    repo = MockCompanyRepository()
+    fetcher = MockJobstreetFetcher()
+    updater = JobstreetVacancyUpdater(repo, fetcher)
+    updater.update()
+
+    assert repo.called_count == 1
+    assert fetcher.called_count == 1
+
+def test_jobstreet_vacancy_updater_one_company_jobstreet_id_found():
+    np.random.seed(120)
+    chosen_company_id = np.random.randint(999_999_999)
+    chosen_company_name = f"company_{chosen_company_id}"
+    chosen_company_jobstreet_id = f"jsid_{chosen_company_id}"
+
+    class MockCompanyRepository(CompanyRepository):
+        def __init__(self):
+            self.get_called_count = 0
+            self.set_called_count = 0
+
+        def get_all(self):
+            self.get_called_count += 1
+            return [{
+                "id": chosen_company_id,
+                "name": chosen_company_name,
+                "jobstreet_id": None
+            }]
+        
+        def set_jobstreet_id(self, id, value: str):
+            assert id == chosen_company_id
+            assert value == chosen_company_jobstreet_id
+            self.set_called_count += 1
+        
+    class MockJobstreetFetcher(JobstreetFetcher):
+        def __init__(self):
+            self.find_called_count = 0
+            self.get_called_count = 0
+
+        def find_company_id(self, company_name: str) -> str | None:
+            self.find_called_count += 1
+            assert company_name == chosen_company_name
+            return chosen_company_jobstreet_id
+        
+        def get_vacancies_from_company_id(self, company_id: str) -> list:
+            assert company_id == chosen_company_jobstreet_id
+            self.get_called_count += 1
+            return []
+
+    repo = MockCompanyRepository()
+    fetcher = MockJobstreetFetcher()
+    updater = JobstreetVacancyUpdater(repo, fetcher)
+    updater.update()
+
+    assert repo.get_called_count == 1
+    assert fetcher.find_called_count == 1
+    assert repo.set_called_count == 1
+    assert fetcher.get_called_count == 1
+
+def test_jobstreet_vacancy_updater_two_companies_jobstreet_id_found():
+    np.random.seed(120)
+    chosen_companies = []
+    for _ in range(2):
+        chosen_company_id = np.random.randint(999_999_999)
+        chosen_company_name = f"company_{chosen_company_id}"
+        chosen_companies.append({
+            "id": chosen_company_id,
+            "name": chosen_company_name,
+            "jobstreet_id": None
+        })
+
+    class MockCompanyRepository(CompanyRepository):
+        def __init__(self):
+            self.get_called_count = 0
+
+        def get_all(self):
+            self.get_called_count += 1
+            return [x.copy() for x in chosen_companies]
+        
+        def set_jobstreet_id(self, id, value: str):
+            assert False, "You shouldn't called this."
+        
+    class MockJobstreetFetcher(JobstreetFetcher):
+        def __init__(self):
+            self.remaining_expected_names = [x["name"] for x in chosen_companies]
+
+        def find_company_id(self, company_name: str) -> str | None:
+            self.remaining_expected_names.remove(company_name)
+            return None
+        
+        def get_vacancies_from_company_id(self, company_id: str) -> list:
+            assert False, "You shouldn't called this."
+
+    repo = MockCompanyRepository()
+    fetcher = MockJobstreetFetcher()
+    updater = JobstreetVacancyUpdater(repo, fetcher)
+    updater.update()
+
+    assert repo.get_called_count == 1
+    assert len(fetcher.remaining_expected_names) == 0
